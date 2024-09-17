@@ -40,55 +40,52 @@ func main() {
 
 	if len(os.Args) < 2 {
 		fmt.Println("Please specify at least one address:port!")
-		fmt.Println("go run usaDIMEX-f.go 0 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
-		fmt.Println("go run usaDIMEX-f.go 1 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
-		fmt.Println("go run usaDIMEX-f.go 2 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
 		return
 	}
 
-	id, _ := strconv.Atoi(os.Args[1])
-	addresses := os.Args[2:]
-	// fmt.Print("id: ", id, "   ") fmt.Println(addresses)
+	id, _ := strconv.Atoi(os.Args[1])   // Identificador do processo (0, 1, 2, ...)
+	addresses := os.Args[2:]            // Endereços dos processos
+	dmx := DIMEX.NewDIMEX(addresses, id, true) // Inicializa o módulo DIMEX
 
-	var dmx *DIMEX.DIMEX_Module = DIMEX.NewDIMEX(addresses, id, true)
-	fmt.Println(dmx)
-
-	// abre arquivo que TODOS processos devem poder usar
-	file, err := os.OpenFile("./mxOUT.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
-	}
-	defer file.Close() // Ensure the file is closed at the end of the function
-
-	// espera para facilitar inicializacao de todos processos (a mao)
-	time.Sleep(3 * time.Second)
-
-	for {
-		// SOLICITA ACESSO AO DIMEX
-		fmt.Println("[ APP id: ", id, " PEDE   MX ]")
-		dmx.Req <- DIMEX.ENTER
-		//fmt.Println("[ APP id: ", id, " ESPERA MX ]")
-		// ESPERA LIBERACAO DO MODULO DIMEX
-		<-dmx.Ind //
-
-		// A PARTIR DAQUI ESTA ACESSANDO O ARQUIVO SOZINHO
-		_, err = file.WriteString("|") // marca entrada no arquivo
+		// Abre o arquivo compartilhado "mxOUT.txt"
+		file, err := os.OpenFile("./mxOUT.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			fmt.Println("Error writing to file:", err)
+			fmt.Println("Error opening file:", err)
 			return
 		}
-
-		fmt.Println("[ APP id: ", id, " *EM*   MX ]")
-
-		_, err = file.WriteString(".") // marca saida no arquivo
-		if err != nil {
-			fmt.Println("Error writing to file:", err)
-			return
+		defer file.Close()
+	
+		// Aguarda para sincronizar com os outros processos
+		time.Sleep(3 * time.Second)
+	
+		for {
+			// 1. Solicita entrada na Seção Crítica (SC)
+			fmt.Println("[ APP id: ", id, " PEDE ACESSO À SC ]")
+			dmx.Req <- DIMEX.ENTER // Envia solicitação de entrada
+	
+			// 2. Espera até obter acesso à SC
+			<-dmx.Ind // Espera o módulo DIMEX dar permissão para entrar na SC
+			fmt.Println("[ APP id: ", id, " ENTROU NA SC ]")
+	
+			// 3. Escreve no arquivo "mxOUT.txt" o padrão |.
+			_, err = file.WriteString("|")
+			if err != nil {
+				fmt.Println("Error writing to file:", err)
+				return
+			}
+			time.Sleep(500 * time.Millisecond) // Simula algum processamento dentro da SC
+	
+			_, err = file.WriteString(".")
+			if err != nil {
+				fmt.Println("Error writing to file:", err)
+				return
+			}
+			fmt.Println("[ APP id: ", id, " SAIU DA SC ]")
+	
+			// 4. Libera a Seção Crítica (SC)
+			dmx.Req <- DIMEX.EXIT // Informa ao módulo DIMEX que o processo saiu da SC
+	
+			// Tempo de espera antes de tentar novamente
+			time.Sleep(2 * time.Second) // Pequeno atraso para evitar "busy waiting"
 		}
-
-		// AGORA VAI LIBERAR O ARQUIVO PARA OUTROS
-		dmx.Req <- DIMEX.EXIT //
-		fmt.Println("[ APP id: ", id, " FORA   MX ]")
 	}
-}
