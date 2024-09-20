@@ -25,6 +25,7 @@
 // "|."  dos processos de diversas diferentes formas.
 // Ou seja, o padrão correto acima é garantido pelo dimex.
 // Ainda assim, isto é apenas um teste.  E testes são frágeis em sistemas distribuídos.
+
 package main
 
 import (
@@ -46,57 +47,45 @@ func main() {
 	addresses := os.Args[2:]            // Endereços dos processos
 	dmx := DIMEX.NewDIMEX(addresses, id, true) // Inicializa o módulo DIMEX
 
-	// Abre o arquivo compartilhado "mxOUT.txt"
-	file, err := os.OpenFile("./mxOUT.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Println("Error opening file:", err)
-		return
-	}
-	defer file.Close()
-
-	// Aguarda para sincronizar com os outros processos
-	time.Sleep(3 * time.Second)
-
-	// Goroutine para iniciar snapshots concorrentes
-	go func() {
-		snapshotId := 1
+		// Abre o arquivo compartilhado "mxOUT.txt"
+		file, err := os.OpenFile("./mxOUT.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Println("Error opening file:", err)
+			return
+		}
+		defer file.Close()
+	
+		// Aguarda para sincronizar com os outros processos
+		time.Sleep(3 * time.Second)
+	
 		for {
-			// Inicia snapshots em intervalos de tempo
-			time.Sleep(10 * time.Second) // Inicia um snapshot a cada 10 segundos
-			fmt.Println("[ APP id: ", id, " INICIA SNAPSHOT ", snapshotId, " ]")
-			dmx.SnapshotReq <- DIMEX.SnapshotMessage{SnapshotId: snapshotId} // Envia solicitação de snapshot
-			snapshotId++
+			// 1. Solicita entrada na Seção Crítica (SC)
+			fmt.Println("[ APP id: ", id, " PEDE ACESSO À SC ]")
+			dmx.Req <- DIMEX.ENTER // Envia solicitação de entrada
+	
+			// 2. Espera até obter acesso à SC
+			<-dmx.Ind // Espera o módulo DIMEX dar permissão para entrar na SC
+			fmt.Println("[ APP id: ", id, " ENTROU NA SC ]")
+	
+			// 3. Escreve no arquivo "mxOUT.txt" o padrão |.
+			_, err = file.WriteString("|")
+			if err != nil {
+				fmt.Println("Error writing to file:", err)
+				return
+			}
+			time.Sleep(500 * time.Millisecond) // Simula algum processamento dentro da SC
+	
+			_, err = file.WriteString(".")
+			if err != nil {
+				fmt.Println("Error writing to file:", err)
+				return
+			}
+			fmt.Println("[ APP id: ", id, " SAIU DA SC ]")
+	
+			// 4. Libera a Seção Crítica (SC)
+			dmx.Req <- DIMEX.EXIT // Informa ao módulo DIMEX que o processo saiu da SC
+	
+			// Tempo de espera antes de tentar novamente
+			time.Sleep(2 * time.Second) // Pequeno atraso para evitar "busy waiting"
 		}
-	}()
-
-	for {
-		// 1. Solicita entrada na Seção Crítica (SC)
-		fmt.Println("[ APP id: ", id, " PEDE ACESSO À SC ]")
-		dmx.Req <- DIMEX.ENTER // Envia solicitação de entrada
-
-		// 2. Espera até obter acesso à SC
-		<-dmx.Ind // Espera o módulo DIMEX dar permissão para entrar na SC
-		fmt.Println("[ APP id: ", id, " ENTROU NA SC ]")
-
-		// 3. Escreve no arquivo "mxOUT.txt" o padrão |.
-		_, err = file.WriteString("|")
-		if err != nil {
-			fmt.Println("Error writing to file:", err)
-			return
-		}
-		time.Sleep(500 * time.Millisecond) // Simula algum processamento dentro da SC
-
-		_, err = file.WriteString(".")
-		if err != nil {
-			fmt.Println("Error writing to file:", err)
-			return
-		}
-		fmt.Println("[ APP id: ", id, " SAIU DA SC ]")
-
-		// 4. Libera a Seção Crítica (SC)
-		dmx.Req <- DIMEX.EXIT // Informa ao módulo DIMEX que o processo saiu da SC
-
-		// Tempo de espera antes de tentar novamente
-		time.Sleep(2 * time.Second) // Pequeno atraso para evitar "busy waiting"
 	}
-}
