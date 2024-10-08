@@ -22,6 +22,7 @@ package DIMEX
 import (
 	PP2PLink "SD/PP2PLink"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,7 +45,6 @@ const (
 	EXIT
 )
 
-// Declaração de dmxResp corrigida
 type dmxResp struct {
 	// Pode estar vazia; usada apenas como um sinal de que o processo pode acessar a SC
 }
@@ -159,6 +159,9 @@ func (module *DIMEX_Module) handleUponSnapshot(snapshotId int) {
 	// Armazena o snapshot
 	module.snapshots[snapshotId] = snapshot
 
+	// Log the snapshot to a file
+	module.logSnapshot(snapshotId, snapshot)
+
 	// Envia mensagem de snapshot para todos os outros processos
 	for i := 0; i < len(module.addresses); i++ {
 		if module.id != i {
@@ -187,6 +190,31 @@ func (module *DIMEX_Module) processSnapshot(msg PP2PLink.PP2PLink_Ind_Message) {
 		module.snapshots[snapshotId] = snapshot
 		module.outDbg(fmt.Sprintf("Processou snapshot %d", snapshotId))
 	}
+}
+
+// Function to log the snapshot
+func (module *DIMEX_Module) logSnapshot(snapshotId int, snapshot SnapshotState) {
+    // Ensure the snapshot directory exists
+    snapshotDir := "snapshot"
+    if err := os.MkdirAll(snapshotDir, os.ModePerm); err != nil {
+        fmt.Println("Error creating snapshot directory:", err)
+        return
+    }
+
+    // Create the snapshot file in the snapshot directory
+    filename := fmt.Sprintf("%s/snapshot_%d_process_%d.txt", snapshotDir, snapshotId, module.id)
+    file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        fmt.Println("Error opening snapshot file:", err)
+        return
+    }
+    defer file.Close()
+
+    log := fmt.Sprintf("Snapshot ID: %d\nProcess State: %d\nWaiting: %v\nTimestamp: %d\nMessages: %v\n\n",
+        snapshotId, snapshot.ProcessState, snapshot.Waiting, snapshot.Timestamp, snapshot.Messages)
+    if _, err := file.WriteString(log); err != nil {
+        fmt.Println("Error writing snapshot to file:", err)
+    }
 }
 
 // ------------------------------------------------------------------------------------

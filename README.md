@@ -1,7 +1,7 @@
-APRESENTAÇÃO:  30.set  , horário de aula, LABs 409/412
+# APRESENTAÇÃO:  30.set  , horário de aula, LABs 409/412
 
 Crie uma pasta cujo nome é
-    a concatenação dos nomes completos dos participantes, 
+    a concatenação dos nomes completos dos participantes,
     separados por "_"
     em ordem alfabética
            Ex.:   BarbaraLiskov_EdmundClarke_LeslieLamport
@@ -25,14 +25,14 @@ Note que na exclusão mútua, todo processo tem um canal com cada outro
 e que este canal preserva ordem e não perde mensagens.   Assim, as suposições
 do algoritmo de Chandy-Lamport são satisfeitas.
 Conforme o algoritmo, o módulo DiMEx, estendido para snapshot, pode receber/tratar também uma mensagem de snapshot.
-Cada snapshot tem um identificador único criado no processo que inicia o mesmo.   
+Cada snapshot tem um identificador único criado no processo que inicia o mesmo.
 Todo processo, ao gravar seu estado, grava este identificador junto.
 O estado deve incluir suas variáveis e o estado dos seus canais de entrada, conforme o algoritmo de snapshot.
 Os (diversos) snapshots completos devem ser avaliados junto ao funcionamento do sistema.
 
 Realize as seguintes etapas, e demonstre os resultados no dia da apresentação.
 
-0) rode o DIMEX com no mínimo 3 processos.   
+0) rode o DIMEX com no mínimo 3 processos.
 
 1) faça um processo iniciar snapshots sucessivos, cada um com um identificador (1, 2, 3 ...)
     concorrentemente aos seus acessos como um processo usuário do DIMEX
@@ -55,12 +55,12 @@ Realize as seguintes etapas, e demonstre os resultados no dia da apresentação.
       Cada snapshot é avaliado para todas invariantes.
       A ferramenta avisa invariantes violadas e o snapshot.
 
-3) rode o sistema e avalie com a ferramenta - 
+4) rode o sistema e avalie com a ferramenta -
       se ela gerou avisos de violacao de invariantes,  avalie seu algoritmo (ou o algoritmo de snapshot)
       para o DIMEX supostamente correto, as invariantes devem todas passar.
 
-4) insira falhas no DIMEX
+5) insira falhas no DIMEX
       por exemplo, altere a condicao de resposta para violar a SC,
-                               altere a mesma condicao para bloquear 
+                               altere a mesma condicao para bloquear
 
-5)  detecte estes casos com a análise de snapshots
+6) detecte estes casos com a análise de snapshots
