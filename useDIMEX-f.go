@@ -45,7 +45,15 @@ func main() {
 
 	id, _ := strconv.Atoi(os.Args[1])   // Identificador do processo (0, 1, 2, ...)
 	addresses := os.Args[2:]            // Endereços dos processos
-	dmx := DIMEX.NewDIMEX(addresses, id, true) // Inicializa o módulo DIMEX
+	dmx := DIMEX.NewDIMEX(addresses, id, true) // Inicializa o módulo DIMEX	
+		// Ensure the snapshots directory exists
+		if _, err := os.Stat("./snapshots"); os.IsNotExist(err) {
+			err := os.Mkdir("./snapshots", 0755)
+			if err != nil {
+				fmt.Println("Error creating snapshots directory:", err)
+				return
+			}
+		}
 
 		// Abre o arquivo compartilhado "mxOUT.txt"
 		file, err := os.OpenFile("./mxOUT.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -57,6 +65,16 @@ func main() {
 	
 		// Aguarda para sincronizar com os outros processos
 		time.Sleep(3 * time.Second)
+
+		snapshotID := 1
+		go func() {
+			for {
+				time.Sleep(1 * time.Second) // Adjust the interval as needed
+				fmt.Println("[ APP id: ", id, " INITIATING SNAPSHOT ", snapshotID, " ]")
+				dmx.InitiateSnapshot(snapshotID)
+				snapshotID++
+			}
+		}()
 	
 		for {
 			// 1. Solicita entrada na Seção Crítica (SC)
