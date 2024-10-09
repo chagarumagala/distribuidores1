@@ -72,7 +72,7 @@ func main() {
 				fmt.Println("Error writing to file:", err)
 				return
 			}
-			time.Sleep(500 * time.Millisecond) // Simula algum processamento dentro da SC
+			time.Sleep(1 * time.Second) // Simula algum processamento dentro da SC
 	
 			_, err = file.WriteString(".")
 			if err != nil {

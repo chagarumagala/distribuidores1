@@ -135,6 +135,10 @@ func (module *DIMEX_Module) Start() {
 				}
 
 			case msgOutro := <-module.Pp2plink.Ind: // Mensagem de outro processo
+				// If recording, record the message
+				if module.Recording[module.id] {
+					module.ChannelBuffers[module.id] = append(module.ChannelBuffers[module.id], msgOutro.Message)
+				}
 				if strings.Contains(msgOutro.Message, "respOK") {
 					module.outDbg("Recebeu respOK! " + msgOutro.Message)
 					module.handleUponDeliverRespOk(msgOutro)
@@ -149,13 +153,6 @@ func (module *DIMEX_Module) Start() {
 					snapshotID, _ := strconv.Atoi(parts[1])
 					senderID, _ := strconv.Atoi(parts[2])
 					module.handleMarkerMessage(snapshotID, senderID)
-				}else {
-					// Record message if we are recording the channel state
-					for i := 0; i < len(module.addresses); i++ {
-						if module.Recording[i] {
-							module.ChannelBuffers[i] = append(module.ChannelBuffers[i], msgOutro.Message)
-						}
-					}
 				}
 			}
 		}
@@ -309,13 +306,14 @@ func (module *DIMEX_Module) handleMarkerMessage(snapshotID int, senderID int) {
 		}
 	} else {
 		// Subsequent marker received, stop recording the state of the channel from senderID
-		module.Recording[senderID] = false
 		snapshot := module.Snapshots[snapshotID]
-
 		// save snapshot to file
 		err := snapshot.SaveToFile(module.id)
 		if err != nil {
 			module.outDbg(fmt.Sprintf("Error saving snapshot: %v", err))
 		}
+		
+		module.Recording[senderID] = false
+		module.ChannelBuffers[senderID] = []string{}
 	}
 }
