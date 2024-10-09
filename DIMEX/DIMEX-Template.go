@@ -25,7 +25,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // ------------------------------------------------------------------------------------
@@ -61,18 +60,20 @@ type DIMEX_Module struct {
 	nbrResps  int          // número de respostas recebidas
 	dbg       bool
 	Pp2plink *PP2PLink.PP2PLink // acesso aa comunicacao enviar por PP2PLinq.Req e receber por PP2PLinq.Ind
-	Snapshots      map[int]*Snapshot
-	MarkerReceived map[int]bool
-	SnapshotMutex  sync.Mutex
-	Recording      map[int]bool
-	ChannelBuffers map[int][]string
+	Snapshots      map[int]*Snapshot // mapa de snapshots
+	MarkerReceived map[int]bool // mapa de marcadores recebidos
+	Recording      map[int]bool // mapa de canais que estão sendo gravados
+	ChannelBuffers map[int][]string // buffers de mensagens recebidas
+
+	// Parâmetros de falhas
+	violateSC   bool // Violação da SC (exclusão mútua)
+	blockRespOK bool // Bloqueia envio de respOK
 }
 
 type Snapshot struct {
 	ID        int
 	State     State
 	ReqTs     int
-	NbrResps  int
 	Waiting   []bool
 	ChannelStates map[int][]string
 }
@@ -81,7 +82,7 @@ type Snapshot struct {
 // ------- inicializacao
 // ------------------------------------------------------------------------------------
 
-func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
+func NewDIMEX(_addresses []string, _id int, _dbg bool, violateSC bool, blockRespOK bool) *DIMEX_Module {
 
 	p2p := PP2PLink.NewPP2PLink(_addresses[_id], _dbg)
 
@@ -102,6 +103,8 @@ func NewDIMEX(_addresses []string, _id int, _dbg bool) *DIMEX_Module {
 		MarkerReceived: make(map[int]bool),
 		Recording:     make(map[int]bool),
 		ChannelBuffers: make(map[int][]string),
+		violateSC:    violateSC,
+        blockRespOK:  blockRespOK,
 	}
 
 	for i := 0; i < len(dmx.waiting); i++ {
@@ -175,6 +178,12 @@ func (module *DIMEX_Module) handleUponReqEntry() {
 		// Envia a mensagem de requisição de entrada para todos os processos
 		module.sendToLink(module.addresses[i], "reqEntry "+strconv.Itoa(module.id)+" "+strconv.Itoa(module.lcl), "")
 	}
+
+	if module.violateSC {
+        module.st = inMX
+        module.Ind <- dmxResp{} // Envia sinal para acessar a SC
+        module.outDbg("Processo " + strconv.Itoa(module.id) + " violou a SC!")
+    }
 }
 
 func (module *DIMEX_Module) handleUponReqExit() {
@@ -207,6 +216,11 @@ func (module *DIMEX_Module) handleUponDeliverReqEntry(msgOutro PP2PLink.PP2PLink
 	parts := strings.Split(msgOutro.Message, " ")
 	senderId, _ := strconv.Atoi(parts[1])
 	senderTs, _ := strconv.Atoi(parts[2])
+
+	if module.blockRespOK {
+        module.outDbg(fmt.Sprintf("Bloqueio ativado: não enviou respOK para %d", senderId))
+        return // Bloqueia a resposta
+    }
 
 	// Verifica a prioridade para enviar respOK
 	if module.st == noMX || (module.st == wantMX && before(senderId, senderTs, module.id, module.reqTs)) {
@@ -260,51 +274,12 @@ func (snapshot *Snapshot) SaveToFile(processID int) error {
 	return nil
 }
 
-
 func (module *DIMEX_Module) InitiateSnapshot(snapshotID int) {
-	module.SnapshotMutex.Lock()
-	defer module.SnapshotMutex.Unlock()
-
-	// Record the local state
-	snapshot := &Snapshot{
-		ID:            snapshotID,
-		State:         module.st,
-		ReqTs:         module.reqTs,
-		NbrResps:      module.nbrResps,
-		Waiting:       append([]bool(nil), module.waiting...),
-		ChannelStates: make(map[int][]string),
-	}
-	module.Snapshots[snapshotID] = snapshot
-
-	// Save snapshot to file
-	err := snapshot.SaveToFile(module.id)
-	if err != nil {
-		module.outDbg(fmt.Sprintf("Error saving snapshot: %v", err))
-	}
-
-	// Send marker messages to all other processes
-	for i := 0; i < len(module.addresses); i++ {
-		if i != module.id {
-			module.sendToLink(module.addresses[i], fmt.Sprintf("marker %d %d", snapshotID, module.id), "")
-		}
-	}
-
-	// Mark that this process has received a marker for this snapshot
-	module.MarkerReceived[snapshotID] = true
-
-	// Start recording the state of incoming channels
-	for i := 0; i < len(module.addresses); i++ {
-		if i != module.id {
-			module.Recording[i] = true
-			module.ChannelBuffers[i] = []string{}
-		}
-	}
+	// Send marker message to self
+	module.sendToLink(module.addresses[module.id], fmt.Sprintf("marker %d %d", snapshotID, module.id), "")
 }
 
 func (module *DIMEX_Module) handleMarkerMessage(snapshotID int, senderID int) {
-	module.SnapshotMutex.Lock()
-	defer module.SnapshotMutex.Unlock()
-
 	if !module.MarkerReceived[snapshotID] {
 		// First marker received for this snapshot, record local state
 		module.MarkerReceived[snapshotID] = true
@@ -314,17 +289,10 @@ func (module *DIMEX_Module) handleMarkerMessage(snapshotID int, senderID int) {
 			ID:            snapshotID,
 			State:         module.st,
 			ReqTs:         module.reqTs,
-			NbrResps:      module.nbrResps,
 			Waiting:       append([]bool(nil), module.waiting...),
 			ChannelStates: make(map[int][]string),
 		}
 		module.Snapshots[snapshotID] = snapshot
-
-		// Save snapshot to file
-		err := snapshot.SaveToFile(module.id)
-		if err != nil {
-			module.outDbg(fmt.Sprintf("Error saving snapshot: %v", err))
-		}
 
 		// Send marker messages to all other processes
 		for i := 0; i < len(module.addresses); i++ {
@@ -343,8 +311,11 @@ func (module *DIMEX_Module) handleMarkerMessage(snapshotID int, senderID int) {
 		// Subsequent marker received, stop recording the state of the channel from senderID
 		module.Recording[senderID] = false
 		snapshot := module.Snapshots[snapshotID]
-		if snapshot != nil {
-			snapshot.ChannelStates[senderID] = append(snapshot.ChannelStates[senderID], "marker received")
+
+		// save snapshot to file
+		err := snapshot.SaveToFile(module.id)
+		if err != nil {
+			module.outDbg(fmt.Sprintf("Error saving snapshot: %v", err))
 		}
 	}
 }

@@ -1,30 +1,6 @@
-// Construido como parte da disciplina: Sistemas Distribuidos - PUCRS - Escola Politecnica
-//  Professor: Fernando Dotti  (https://fldotti.github.io/)
-// Uso p exemplo:
-//   go run usaDIMEX.go 0 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
-//   go run usaDIMEX.go 1 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
-//   go run usaDIMEX.go 2 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002 ")
-// ----------
-// LANCAR N PROCESSOS EM SHELL's DIFERENTES, UMA PARA CADA PROCESSO.
-// para cada processo fornecer: seu id único (0, 1, 2 ...) e a mesma lista de processos.
-// o endereco de cada processo é o dado na lista, na posicao do seu id.
-// no exemplo acima o processo com id=1  usa a porta 6001 para receber e as portas
-// 5000 e 7002 para mandar mensagens respectivamente para processos com id=0 e 2
-// -----------
-// Esta versão supõe que todos processos tem acesso a um mesmo arquivo chamado "mxOUT.txt"
-// Todos processos escrevem neste arquivo, usando o protocolo dimex para exclusao mutua.
-// Os processos escrevem "|." cada vez que acessam o arquivo.   Assim, o arquivo com conteúdo
-// correto deverá ser uma sequencia de
-// |.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.
-// |.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.
-// |.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.|.
-// etc etc ...     ....  até o usuário interromper os processos (ctl c).
-// Qualquer padrao diferente disso, revela um erro.
-//      |.|.|.|.|.||..|.|.|.  etc etc  por exemplo.
-// Se voce retirar o protocolo dimex vai ver que o arquivo poderá entrelacar
-// "|."  dos processos de diversas diferentes formas.
-// Ou seja, o padrão correto acima é garantido pelo dimex.
-// Ainda assim, isto é apenas um teste.  E testes são frágeis em sistemas distribuídos.
+//   go run useDIMEX-f.go 0 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002
+//   go run useDIMEX-f.go 1 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002
+//   go run useDIMEX-f.go 2 127.0.0.1:5000  127.0.0.1:6001  127.0.0.1:7002
 
 package main
 
@@ -45,7 +21,10 @@ func main() {
 
 	id, _ := strconv.Atoi(os.Args[1])   // Identificador do processo (0, 1, 2, ...)
 	addresses := os.Args[2:]            // Endereços dos processos
-	dmx := DIMEX.NewDIMEX(addresses, id, true) // Inicializa o módulo DIMEX	
+	violateSC := false   // Ativar falha de violação da SC
+    blockRespOK := false // Ativar falha de bloqueio de resposta
+
+    dmx := DIMEX.NewDIMEX(addresses, id, true, violateSC, blockRespOK)  // Inicializa o módulo DIMEX	
 		// Ensure the snapshots directory exists
 		if _, err := os.Stat("./snapshots"); os.IsNotExist(err) {
 			err := os.Mkdir("./snapshots", 0755)
@@ -66,15 +45,17 @@ func main() {
 		// Aguarda para sincronizar com os outros processos
 		time.Sleep(3 * time.Second)
 
-		snapshotID := 1
-		go func() {
-			for {
-				time.Sleep(1 * time.Second) // Adjust the interval as needed
-				fmt.Println("[ APP id: ", id, " INITIATING SNAPSHOT ", snapshotID, " ]")
-				dmx.InitiateSnapshot(snapshotID)
-				snapshotID++
-			}
-		}()
+		// if id == 0 {
+			snapshotID := 1
+			go func() {
+				for {
+					time.Sleep(200 * time.Millisecond) // Adjust the interval as needed
+					fmt.Println("[ APP id: ", id, " INITIATING SNAPSHOT ", snapshotID, " ]")
+					dmx.InitiateSnapshot(snapshotID)
+					snapshotID++
+				}
+			}()
+		// }
 	
 		for {
 			// 1. Solicita entrada na Seção Crítica (SC)
